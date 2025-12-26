@@ -112,6 +112,7 @@ inception_trades.log
 
 # API Keys - NEVER COMMIT
 api_keys.py
+api_credentials.py
 secrets.py
 .env.local
 
