@@ -30,7 +30,7 @@ import sys
 
 # Add strategy path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from strategies.brinks_box_v4 import BrinksBoxStrategyV4
+from strategies.brinks_box_v5 import BrinksBoxStrategyV5
 
 
 class InceptionBot:
@@ -63,7 +63,7 @@ class InceptionBot:
         self.symbol = 'BTC/USDT:USDT'
         
         # Strategy - V4 Optimized
-        self.strategy = BrinksBoxStrategyV4()
+        self.strategy = BrinksBoxStrategyV5()
         
         # Trading Configuration - OPTIMIZED SETTINGS
         self.LEVERAGE = 10
