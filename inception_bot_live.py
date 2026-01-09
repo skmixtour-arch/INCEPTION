@@ -385,8 +385,7 @@ USDT: ${balance:,.2f}
                 params={
                     'stopPrice': sl_price,
                     'positionSide': position_side,
-                    'closePosition': True,
-                    'reduceOnly': True
+                    'closePosition': True
                 }
             )
             
@@ -399,10 +398,22 @@ USDT: ${balance:,.2f}
                 params={
                     'stopPrice': tp_price,
                     'positionSide': position_side,
-                    'closePosition': True,
-                    'reduceOnly': True
+                    'closePosition': True
                 }
             )
+            
+            # 4. VERIFY orders were placed
+            if not sl_order.get('id') or not tp_order.get('id'):
+                # Orders failed - close position immediately!
+                self.send_telegram("⚠️ SL/TP orders failed! Closing position...")
+                self.exchange.create_market_order(
+                    symbol=self.symbol,
+                    side=sl_side,
+                    amount=amount,
+                    params={'positionSide': position_side}
+                )
+                self.send_telegram("🛑 Position closed - SL/TP could not be placed")
+                return
             
             # Save position state
             self.position = {
@@ -428,6 +439,7 @@ USDT: ${balance:,.2f}
 🎯 TP: ${tp_price:,.2f} (+{self.TP_PCT*100}%)
 💵 Value: ${position_value:,.2f}
 ⚡ Leverage: {self.LEVERAGE}x
+✅ SL/TP Orders Verified
 """
             self.send_telegram(msg)
             self.save_state()
