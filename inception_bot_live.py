@@ -6,8 +6,8 @@
 ██║██║ ╚████║╚██████╗███████╗██║        ██║   ██║╚██████╔╝██║ ╚████║
 ╚═╝╚═╝  ╚═══╝ ╚═════╝╚══════╝╚═╝        ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
 
-INCEPTION Trading Bot v3.0 - LIVE TRADING
-Strategy: Brinks Box V6 (Breakout Detection)
+INCEPTION Trading Bot v4.0 - LIVE TRADING
+Strategy: Brinks Box V7 (Vector Candle Filters)
 Telegram Commands: /status /stop /start /balance /trades
 """
 
@@ -23,12 +23,13 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from strategies.brinks_box_v6 import BrinksBoxStrategyV6
+from strategies.brinks_box_v7 import BrinksBoxStrategyV7
 
 
 class InceptionBotLive:
-    """INCEPTION Bot v3.0 - LIVE TRADING with Real Orders on Binance Futures"""
+    """INCEPTION Bot v4.0 - LIVE TRADING with V7 Vector Filters"""
     
-    VERSION = "3.0.0"
+    VERSION = "4.0.0"
     
     # === CREDENTIALS (Edit these) ===
     BINANCE_API_KEY = "xoLxpdAmRcnS7RT9Ny9tNJFhMD9GZTotzAlLkjfZi1D0VDhHXXW9Zvi5YgAk5yvm"
@@ -64,6 +65,7 @@ class InceptionBotLive:
         
         # Strategy
         self.strategy = BrinksBoxStrategyV6()
+        self.strategy_v7 = BrinksBoxStrategyV7()  # V7 for vector filtering
         
         # State
         self.is_running = True
@@ -363,60 +365,99 @@ USDT: ${balance:,.2f}
         long_entry = round(brinks_high * 1.0005, 2)
         short_entry = round(brinks_low * 0.9995, 2)
         
+        # === V7 VECTOR FILTER ===
+        # Get London session for position bias
+        london = today_data[(today_data.index.hour >= 8) & (today_data.index.hour < 14)]
+        london_high = london['high'].max() if not london.empty else None
+        london_low = london['low'].min() if not london.empty else None
+        
+        # Use current price (mid of Brinks) for vector analysis
+        current_price = (brinks_high + brinks_low) / 2
+        
+        # Analyze for LONG
+        long_analysis = self.strategy_v7.analyze_breakout_opportunity(
+            df, brinks_high, brinks_low, brinks_high + 1,  # Simulate breakout up
+            london_high, london_low
+        )
+        long_blocked = long_analysis['blocked']
+        
+        # Analyze for SHORT  
+        short_analysis = self.strategy_v7.analyze_breakout_opportunity(
+            df, brinks_high, brinks_low, brinks_low - 1,  # Simulate breakout down
+            london_high, london_low
+        )
+        short_blocked = short_analysis['blocked']
+        
         try:
             # Cancel any existing pending orders first
             self.exchange.cancel_all_orders(self.symbol)
             
-            # Place LONG breakout order (BUY STOP at Brinks High)
-            long_order = self.exchange.create_order(
-                symbol=self.symbol,
-                type='STOP_MARKET',
-                side='buy',
-                amount=amount_long,
-                params={
-                    'stopPrice': long_entry,
-                    'positionSide': 'LONG'
-                }
-            )
+            long_order = None
+            short_order = None
+            orders_placed = []
             
-            # Place SHORT breakout order (SELL STOP at Brinks Low)
-            short_order = self.exchange.create_order(
-                symbol=self.symbol,
-                type='STOP_MARKET',
-                side='sell',
-                amount=amount_short,
-                params={
-                    'stopPrice': short_entry,
-                    'positionSide': 'SHORT'
-                }
-            )
+            # Place LONG breakout order (only if not blocked by vectors)
+            if not long_blocked:
+                long_order = self.exchange.create_order(
+                    symbol=self.symbol,
+                    type='STOP_MARKET',
+                    side='buy',
+                    amount=amount_long,
+                    params={
+                        'stopPrice': long_entry,
+                        'positionSide': 'LONG'
+                    }
+                )
+                orders_placed.append(f"📈 LONG @ ${long_entry:,.2f}")
+            else:
+                orders_placed.append(f"⛔ LONG blocked (vectors)")
+            
+            # Place SHORT breakout order (only if not blocked by vectors)
+            if not short_blocked:
+                short_order = self.exchange.create_order(
+                    symbol=self.symbol,
+                    type='STOP_MARKET',
+                    side='sell',
+                    amount=amount_short,
+                    params={
+                        'stopPrice': short_entry,
+                        'positionSide': 'SHORT'
+                    }
+                )
+                orders_placed.append(f"📉 SHORT @ ${short_entry:,.2f}")
+            else:
+                orders_placed.append(f"⛔ SHORT blocked (vectors)")
             
             self.pending_orders = {
-                'long_order_id': long_order.get('id'),
-                'short_order_id': short_order.get('id'),
-                'long_entry': long_entry,
-                'short_entry': short_entry,
+                'long_order_id': long_order.get('id') if long_order else None,
+                'short_order_id': short_order.get('id') if short_order else None,
+                'long_entry': long_entry if not long_blocked else None,
+                'short_entry': short_entry if not short_blocked else None,
                 'amount_long': amount_long,
                 'amount_short': amount_short,
                 'brinks_high': brinks_high,
-                'brinks_low': brinks_low
+                'brinks_low': brinks_low,
+                'long_blocked': long_blocked,
+                'short_blocked': short_blocked
             }
             self.orders_placed_date = now.strftime('%Y-%m-%d')
             
+            orders_str = '\n'.join(orders_placed)
             msg = f"""
-🎯 *BREAKOUT ORDERS PLACED*
+🎯 *V7 BREAKOUT ORDERS*
 
-📈 LONG trigger: ${long_entry:,.2f}
-📉 SHORT trigger: ${short_entry:,.2f}
+{orders_str}
 
 📦 Brinks Box:
   High: ${brinks_high:,.2f}
   Low: ${brinks_low:,.2f}
 
+🔍 Vector Filter: {'Active' if (long_blocked or short_blocked) else 'All clear'}
+
 ⏳ Waiting for breakout...
 """
             self.send_telegram(msg)
-            print(f"✅ Breakout orders placed: LONG@${long_entry:,.2f} | SHORT@${short_entry:,.2f}")
+            print(f"✅ V7 Orders: LONG={'blocked' if long_blocked else f'${long_entry:,.0f}'} | SHORT={'blocked' if short_blocked else f'${short_entry:,.0f}'}")
             return True
             
         except Exception as e:
