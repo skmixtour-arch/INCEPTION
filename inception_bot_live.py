@@ -74,6 +74,8 @@ class InceptionBotLive:
         self.last_update_id = 0
         self.brinks_high = None
         self.brinks_low = None
+        self.pending_orders = None  # Track pending breakout orders
+        self.orders_placed_date = None  # Track when orders were placed
         
         # Paths
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -315,6 +317,113 @@ USDT: ${balance:,.2f}
         
         return {'signal': signal, 'price': current_price, 'brinks_high': brinks_high, 'brinks_low': brinks_low}
     
+    def place_breakout_orders(self):
+        """Place pending stop orders at Brinks box levels for exact breakout entry."""
+        df = self.fetch_candles(50)
+        if df is None:
+            return False
+        
+        now = datetime.utcnow()
+        today = now.date()
+        
+        # Get today's Brinks Box (14:00-15:00 UTC)
+        today_data = df[df.index.date == today]
+        brinks = today_data[(today_data.index.hour >= 14) & (today_data.index.hour < 15)]
+        
+        if brinks.empty:
+            print("⚠️ No Brinks box data yet")
+            return False
+        
+        brinks_high = brinks['high'].max()
+        brinks_low = brinks['low'].min()
+        self.brinks_high = brinks_high
+        self.brinks_low = brinks_low
+        
+        # Get balance and calculate position size
+        balance = self.get_balance()
+        if balance < 10:
+            self.send_telegram("❌ Insufficient balance for breakout orders")
+            return False
+        
+        position_value = balance * self.POSITION_SIZE_PCT
+        notional_value = position_value * self.LEVERAGE
+        
+        # Calculate amount for LONG (at brinks high)
+        amount_long = round(notional_value / brinks_high, 3)
+        # Calculate amount for SHORT (at brinks low)  
+        amount_short = round(notional_value / brinks_low, 3)
+        
+        # Ensure minimum notional ($100)
+        if amount_long * brinks_high < 100:
+            amount_long = round(105 / brinks_high, 3)
+        if amount_short * brinks_low < 100:
+            amount_short = round(105 / brinks_low, 3)
+        
+        # Add small buffer to breakout levels (0.05%)
+        long_entry = round(brinks_high * 1.0005, 2)
+        short_entry = round(brinks_low * 0.9995, 2)
+        
+        try:
+            # Cancel any existing pending orders first
+            self.exchange.cancel_all_orders(self.symbol)
+            
+            # Place LONG breakout order (BUY STOP at Brinks High)
+            long_order = self.exchange.create_order(
+                symbol=self.symbol,
+                type='STOP_MARKET',
+                side='buy',
+                amount=amount_long,
+                params={
+                    'stopPrice': long_entry,
+                    'positionSide': 'LONG'
+                }
+            )
+            
+            # Place SHORT breakout order (SELL STOP at Brinks Low)
+            short_order = self.exchange.create_order(
+                symbol=self.symbol,
+                type='STOP_MARKET',
+                side='sell',
+                amount=amount_short,
+                params={
+                    'stopPrice': short_entry,
+                    'positionSide': 'SHORT'
+                }
+            )
+            
+            self.pending_orders = {
+                'long_order_id': long_order.get('id'),
+                'short_order_id': short_order.get('id'),
+                'long_entry': long_entry,
+                'short_entry': short_entry,
+                'amount_long': amount_long,
+                'amount_short': amount_short,
+                'brinks_high': brinks_high,
+                'brinks_low': brinks_low
+            }
+            self.orders_placed_date = now.strftime('%Y-%m-%d')
+            
+            msg = f"""
+🎯 *BREAKOUT ORDERS PLACED*
+
+📈 LONG trigger: ${long_entry:,.2f}
+📉 SHORT trigger: ${short_entry:,.2f}
+
+📦 Brinks Box:
+  High: ${brinks_high:,.2f}
+  Low: ${brinks_low:,.2f}
+
+⏳ Waiting for breakout...
+"""
+            self.send_telegram(msg)
+            print(f"✅ Breakout orders placed: LONG@${long_entry:,.2f} | SHORT@${short_entry:,.2f}")
+            return True
+            
+        except Exception as e:
+            self.send_telegram(f"❌ Failed to place breakout orders: {str(e)}")
+            print(f"Order error: {e}")
+            return False
+
     def _set_leverage(self):
         """Set leverage for the trading pair."""
         try:
@@ -324,6 +433,52 @@ USDT: ${balance:,.2f}
             print(f"Leverage set to {self.LEVERAGE}x")
         except Exception as e:
             print(f"Leverage setting error (may already be set): {e}")
+    
+    def _set_sl_tp_for_position(self, trade_type, entry_price, amount):
+        """Set SL/TP orders for an existing position."""
+        try:
+            if trade_type == 'LONG':
+                sl_price = round(entry_price * (1 - self.SL_PCT), 2)
+                tp_price = round(entry_price * (1 + self.TP_PCT), 2)
+                sl_side = 'sell'
+                position_side = 'LONG'
+            else:
+                sl_price = round(entry_price * (1 + self.SL_PCT), 2)
+                tp_price = round(entry_price * (1 - self.TP_PCT), 2)
+                sl_side = 'buy'
+                position_side = 'SHORT'
+            
+            # Place stop-loss
+            self.exchange.create_order(
+                symbol=self.symbol,
+                type='STOP_MARKET',
+                side=sl_side,
+                amount=amount,
+                params={
+                    'stopPrice': sl_price,
+                    'positionSide': position_side,
+                    'closePosition': True
+                }
+            )
+            
+            # Place take-profit
+            self.exchange.create_order(
+                symbol=self.symbol,
+                type='TAKE_PROFIT_MARKET',
+                side=sl_side,
+                amount=amount,
+                params={
+                    'stopPrice': tp_price,
+                    'positionSide': position_side,
+                    'closePosition': True
+                }
+            )
+            
+            self.send_telegram(f"✅ SL/TP set:\n🛑 SL: ${sl_price:,.2f}\n🎯 TP: ${tp_price:,.2f}")
+            return True
+        except Exception as e:
+            self.send_telegram(f"⚠️ Failed to set SL/TP: {e}")
+            return False
     
     def open_position(self, signal_data):
         """Open a REAL position on Binance with stop-loss."""
@@ -599,20 +754,52 @@ USDT: ${balance:,.2f}
                 
                 # Trading logic (if enabled)
                 elif self.is_trading_enabled:
-                    if now.hour >= 15 and now.hour < 20:
-                        if self.last_signal_date != today:
-                            signal = self.check_signal()
-                            if signal and signal['signal'] != 0:
-                                self.open_position(signal)
-                                self.last_signal_date = today
+                    # At 15:00 UTC - place pending breakout orders
+                    if now.hour == 15 and now.minute < 5:
+                        if self.orders_placed_date != today:
+                            self.place_breakout_orders()
+                    
+                    # During trading window - check if orders filled
+                    elif now.hour >= 15 and now.hour < 20:
+                        if self.pending_orders:
+                            # Check if a position was opened by our pending orders
+                            positions = self.exchange.fetch_positions([self.symbol])
+                            for p in positions:
+                                contracts = float(p.get('contracts', 0))
+                                if contracts != 0:
+                                    # Position opened! Cancel opposite order and set SL/TP
+                                    side = p.get('side', '')
+                                    entry_price = float(p.get('entryPrice', 0))
+                                    
+                                    self.exchange.cancel_all_orders(self.symbol)
+                                    
+                                    trade_type = 'LONG' if side == 'long' else 'SHORT'
+                                    self.send_telegram(f"🚀 *{trade_type} BREAKOUT!*\nEntry: ${entry_price:,.2f}")
+                                    
+                                    # Set SL/TP for the new position
+                                    self._set_sl_tp_for_position(trade_type, entry_price, abs(contracts))
+                                    
+                                    self.position = {
+                                        'type': trade_type,
+                                        'entry': entry_price,
+                                        'amount': abs(contracts),
+                                        'entry_time': datetime.utcnow().isoformat()
+                                    }
+                                    self.pending_orders = None
+                                    self.last_signal_date = today
+                                    self.save_state()
+                                    break
                 
                 # Status print
                 price = self.get_price()
                 status = "🟢" if self.is_trading_enabled else "🔴"
                 pos = f"| {self.position['type']} @ ${self.position['entry']:,.0f}" if self.position else "| No position"
-                print(f"[{now.strftime('%H:%M:%S')}] {status} BTC: ${price:,.0f} {pos}")
+                pending = " | Pending orders" if self.pending_orders else ""
+                print(f"[{now.strftime('%H:%M:%S')}] {status} BTC: ${price:,.0f} {pos}{pending}")
                 
-                time.sleep(30)
+                # Faster polling during trading window (10 sec), otherwise 30 sec
+                sleep_time = 10 if (now.hour >= 15 and now.hour < 20) else 30
+                time.sleep(sleep_time)
                 
             except KeyboardInterrupt:
                 print("\n🛑 Bot stopped")
