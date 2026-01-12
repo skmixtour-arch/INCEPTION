@@ -1,34 +1,39 @@
 """
-Brinks Box Strategy v7.0 - ENHANCED WITH VECTOR FILTERS
-========================================================
-Builds on V6 with enhanced vector candle filtering:
+Brinks Box Strategy v7.1 - ENHANCED WITH VECTOR FILTERS + LEARNED PATTERNS
+==========================================================================
+Builds on V6 with enhanced vector candle filtering + learned patterns:
 
-IMPROVEMENTS OVER V6:
+IMPROVEMENTS:
 1. VECTOR BLOCK FILTER - Skip trades if blocking vectors present
 2. VECTOR CONFLUENCE - Boost score if supportive vectors present
 3. BRINKS POSITION BIAS - Trade with London range direction
 4. STOP-HUNT REVERSAL - Enhanced stop-hunt detection
+5. LEARNED PATTERNS - Weekday scoring from 360-day analysis
 
-ENTRY LOGIC:
-1. Check Brinks Box at 15:00 UTC
-2. Find unrecovered vectors above/below Brinks
-3. Place pending orders ONLY if no blocking vectors
-4. Set SL/TP when filled
+LEARNED INSIGHTS (from brinks_learner.py):
+- GVC in Brinks → 64% bull breakout
+- RVC in Brinks → 59% bear breakout
+- Tuesday best for LONGS (43%)
+- Monday best for SHORTS (43%)
+- Wednesday least predictable
 """
 
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import json
+import os
 
 
 class BrinksBoxStrategyV7:
     """
-    Brinks Box V7 - Enhanced with Vector Candle Filters.
+    Brinks Box V7.1 - Enhanced with Vector Filters + Learned Patterns.
     
     Key improvements:
     - Filter breakouts by checking for blocking vectors
     - Add confluence from supportive vectors
     - Consider Brinks position in London range
+    - Use learned weekday patterns for scoring
     """
     
     def __init__(self):
@@ -53,6 +58,51 @@ class BrinksBoxStrategyV7:
         self.USE_CONFLUENCE = True         # Boost for supportive vectors
         self.USE_BRINKS_POSITION = True    # Consider Brinks in London range
         self.USE_STOPHUNT = True           # Trade stop-hunt reversals
+        self.USE_LEARNED_PATTERNS = True   # Use learned weekday patterns
+        
+        # Learned pattern scores (from 360-day analysis)
+        # Positive = good for that direction, Negative = bad
+        self.WEEKDAY_LONG_SCORE = {
+            0: -1,  # Monday - worst for longs (31% bull)
+            1: +1,  # Tuesday - best for longs (43% bull)
+            2: 0,   # Wednesday - neutral (32% bull)
+            3: 0,   # Thursday - neutral (39% bull)
+            4: 0,   # Friday - neutral (37% bull)
+        }
+        self.WEEKDAY_SHORT_SCORE = {
+            0: +1,  # Monday - best for shorts (43% bear)
+            1: 0,   # Tuesday - neutral (34% bear)
+            2: -1,  # Wednesday - worst for shorts (28% bear)
+            3: 0,   # Thursday - neutral (39% bear)
+            4: 0,   # Friday - neutral (41% bear)
+        }
+        
+        # Load learned patterns if available
+        self.learned_patterns = self._load_learned_patterns()
+    
+    def _load_learned_patterns(self) -> dict:
+        """Load learned patterns from JSON file if available."""
+        try:
+            patterns_file = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                'learned_patterns.json'
+            )
+            if os.path.exists(patterns_file):
+                with open(patterns_file, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"Could not load learned patterns: {e}")
+        return {}
+    
+    def get_weekday_score(self, weekday: int, trade_type: str) -> int:
+        """Get score adjustment based on weekday and trade direction."""
+        if not self.USE_LEARNED_PATTERNS:
+            return 0
+        
+        if trade_type == 'LONG':
+            return self.WEEKDAY_LONG_SCORE.get(weekday, 0)
+        else:
+            return self.WEEKDAY_SHORT_SCORE.get(weekday, 0)
     
     def get_name(self) -> str:
         return self.name
@@ -298,6 +348,12 @@ class BrinksBoxStrategyV7:
                 result['score'] -= 1  # Against bias
             elif bias == 'BEAR' and trade_type == 'LONG':
                 result['score'] -= 1
+        
+        # === FILTER 4: Learned weekday patterns ===
+        if self.USE_LEARNED_PATTERNS and not df.empty:
+            weekday = df.index[-1].weekday()
+            weekday_adj = self.get_weekday_score(weekday, trade_type)
+            result['score'] += weekday_adj
         
         result['reason'] = f'{trade_type} breakout - Score {result["score"]}'
         return result

@@ -1,0 +1,88 @@
+============================================================
+🧠 BRINKS PATTERN LEARNER - INSIGHTS REPORT
+Generated: 2026-01-12 18:07 UTC
+============================================================
+
+📊 BRINKS BOX STATISTICS (14:00-15:00 UTC)
+----------------------------------------
+  Average Range: 1.031%
+  Bullish Candles: 52.4%
+  Vector Candles: 38.0%
+
+📅 WEEKDAY ANALYSIS
+----------------------------------------
+
+  Monday (54 days):
+    Bull Breakout: 31.5% (avg +0.44%)
+    Bear Breakout: 42.6% (avg -0.80%)
+
+  Tuesday (53 days):
+    Bull Breakout: 43.4% (avg +0.72%)
+    Bear Breakout: 34.0% (avg -0.55%)
+
+  Wednesday (53 days):
+    Bull Breakout: 32.1% (avg +0.64%)
+    Bear Breakout: 28.3% (avg -0.61%)
+
+  Thursday (54 days):
+    Bull Breakout: 38.9% (avg +0.48%)
+    Bear Breakout: 38.9% (avg -0.78%)
+
+  Friday (54 days):
+    Bull Breakout: 37.0% (avg +0.63%)
+    Bear Breakout: 40.7% (avg -0.63%)
+
+🔥 VECTOR CANDLE PATTERNS
+----------------------------------------
+  When GVC in Brinks (56 days):
+    → Bull Breakout: 64.3%
+    → Bear Breakout: 17.9%
+  When RVC in Brinks (66 days):
+    → Bull Breakout: 15.2%
+    → Bear Breakout: 59.1%
+
+🎯 BRINKS DIRECTION → BREAKOUT CORRELATION
+----------------------------------------
+  Bullish Brinks → Bull Breakout: 50.0%
+  Bullish Brinks → Bear Breakout: 22.1%
+  Bearish Brinks → Bull Breakout: 21.9%
+  Bearish Brinks → Bear Breakout: 53.1%
+
+🌊 ASIAN SWEEP PATTERNS (Trap Detection)
+----------------------------------------
+  Swept Asian High → Bear Breakout: 28.4% (102 days)
+  Swept Asian Low → Bull Breakout: 31.5% (111 days)
+
+📈 EMA TREND PATTERNS
+----------------------------------------
+  Above 200 EMA → Bull: 40.3% | Bear: 32.6%
+  Below 200 EMA → Bull: 32.3% | Bear: 41.9%
+
+📉 RSI EXTREMES
+----------------------------------------
+  Oversold (RSI<35) → Bull Breakout: 23.6% (55 days)
+  Overbought (RSI>65) → Bear Breakout: 26.3% (57 days)
+
+⭐ BEST BULL CONDITIONS (Win Rate > 55%)
+----------------------------------------
+  Tue | Above 200 EMA | RSI: overbought
+    → Win Rate: 66.7% | Avg Move: +1.02% | Samples: 6
+
+⭐ BEST BEAR CONDITIONS (Win Rate > 55%)
+----------------------------------------
+  Mon | Below 200 EMA | RSI: oversold
+    → Win Rate: 57.1% | Avg Move: -0.58% | Samples: 7
+  Thu | Below 200 EMA | RSI: normal
+    → Win Rate: 56.0% | Avg Move: -1.22% | Samples: 25
+
+============================================================
+🧠 KEY INSIGHTS FOR TRADING
+============================================================
+
+📆 Best day for LONGS: Tuesday (43% bull breakouts)
+
+📆 Best day for SHORTS: Monday (43% bear breakouts)
+
+⚠️  Least predictable: Wednesday (lowest combined breakout rate)
+
+============================================================
